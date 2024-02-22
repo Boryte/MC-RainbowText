@@ -1,4 +1,4 @@
-package net.kyodo.core.utilities;
+package yourpackage;
 
 import java.util.Arrays;
 import java.util.List;
