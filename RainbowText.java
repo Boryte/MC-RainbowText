@@ -1,112 +1,138 @@
-package yourpackage;
+package dev.bytecore.trollreborn.utilities;
 
+import net.md_5.bungee.api.ChatColor;
+
+import java.awt.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import java.util.Arrays;
-import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class RainbowText {
-    private int place;
-    private String text;
-    private String fancyText;
-    private List<String> rainbowArray;
-    private String prefix;
+    private final String text;
+    private final List<String> colorCycle;
+    private final String formatCode;
+    private int offset;
 
-
-    public RainbowText(final String text, final String formatCode) {
-        this(text, formatCode, null);
+    private RainbowText(String text, List<String> cycle, String format, int offset) {
+        this.text       = Objects.requireNonNull(text, "text");
+        this.colorCycle = List.copyOf(cycle);
+        this.formatCode = Objects.requireNonNull(format, "format");
+        this.offset     = Math.floorMod(offset, colorCycle.size());
     }
 
-    public RainbowText(final String text, final List<String> rainbowArray) {
-        this(text, null, rainbowArray);
+    /** Convenience: rainbowize with defaults. */
+    public static RainbowText of(String text) {
+        return builder(text).build();
     }
 
-    public RainbowText(final String text, final String formatCode, final List<String> rainbowArray) {
-        this.place = 0;
-        this.text = (text != null) ? text : "You did not provide any text.";
-        this.fancyText = "You did not provide any text";
-        this.prefix = (formatCode != null) ? formatCode : "";
-        this.place = 0;
-
-        if (rainbowArray != null && !rainbowArray.isEmpty()) {
-            this.rainbowArray = rainbowArray;
-        } else {
-            this.rainbowArray = getDefaultRainbow();
-        }
-
-        updateFancy();
+    /** Start a custom rainbow build. */
+    public static Builder builder(String text) {
+        return new Builder(text);
     }
 
-    private void updateFancy() {
-        int spot = place;
-        StringBuilder fancyTextBuilder = new StringBuilder();
+    /** Rotate the cycle by +1 (or any amount). */
+    public RainbowText shift(int by) {
+        offset = Math.floorMod(offset + by, colorCycle.size());
+        return this;
+    }
 
-        for (char l : text.toCharArray()) {
-            String letter = Character.toString(l);
+    /** Produce the final colored string. */
+    @Override
+    public String toString() {
+        var sb = new StringBuilder(text.length() * 8);
+        int n = colorCycle.size();
 
-            if (!letter.equalsIgnoreCase(" ")) {
-                fancyTextBuilder.append(rainbowArray.get(spot)).append(prefix).append(letter);
-                if (spot == rainbowArray.size() - 1) {
-                    spot = 0;
-                } else {
-                    spot++;
-                }
+        for (int i = 0, len = text.length(); i < len; i++) {
+            char ch = text.charAt(i);
+            if (Character.isWhitespace(ch)) {
+                sb.append(ch);
             } else {
-                fancyTextBuilder.append(letter);
+                // pick a color from the cycle
+                String rawColor = colorCycle.get((i + offset) % n);
+                sb.append(colorize(rawColor))
+                        .append(formatCode)
+                        .append(ch);
             }
         }
-
-        fancyText = fancyTextBuilder.toString();
+        return sb.toString();
     }
 
-    public void moveRainbow() {
-        if (rainbowArray.size() - 1 == place) {
-            place = 0;
-        } else {
-            place++;
+    /** Interpret "#RRGGBB" with Bungee ChatColor.of, or legacy codes. */
+    private String colorize(String code) {
+        if (code.startsWith("#")) {
+            return ChatColor.of(code).toString();
         }
-        updateFancy();
-    }
-
-    public void moveRainbowRight() {
-        if (place == 0) {
-            place = rainbowArray.size() - 1;
-        } else {
-            place--;
+        // support both '&' and '§' as prefix for legacy
+        if (code.startsWith("&") || code.startsWith("§")) {
+            return ChatColor.translateAlternateColorCodes('&', code.replace('§','&'));
         }
-        updateFancy();
+        // otherwise treat it as already a ChatColor string
+        return code;
     }
 
-    public String getOrigonalText() {
-        return text;
-    }
+    /** Builder to customize cycle, brightness, saturation, etc. */
+    public static class Builder {
+        private final String text;
+        private int  steps      = 180;
+        private float saturation= 1.0f;
+        private float brightness= 1.0f;
+        private String format   = "";
+        private List<String> customCycle = null;
 
-    public String getText() {
-        return fancyText;
-    }
-
-    public void setPlace(final int place) {
-        if (place >= 0 && place < rainbowArray.size()) {
-            this.place = place;
-            updateFancy();
+        private Builder(String text) {
+            this.text = text;
         }
-    }
 
-    public List<String> getRainbow() {
-        return rainbowArray;
-    }
+        /** Override the entire color cycle manually. */
+        public Builder cycle(List<String> hexOrLegacyCodes) {
+            this.customCycle = new ArrayList<>(hexOrLegacyCodes);
+            return this;
+        }
 
-    public String getFormatPrefix() {
-        return prefix;
-    }
+        /** How many distinct hues to generate around the circle. Default 180. */
+        public Builder steps(int steps) {
+            this.steps = Math.max(3, steps);
+            return this;
+        }
 
-    public void setFormatPrefix(final String prefix) {
-        this.prefix = prefix;
-        updateFancy();
-    }
+        /** Saturation [0.0–1.0], default 1.0. */
+        public Builder saturation(float sat) {
+            this.saturation = Math.min(1f, Math.max(0f, sat));
+            return this;
+        }
 
-    public static List<String> getDefaultRainbow() {
-        return Arrays.asList("#FF0000", "#FFA500", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#8A2BE2", "#FF00FF");
+        /** Brightness [0.0–1.0], default 1.0. */
+        public Builder brightness(float b) {
+            this.brightness = Math.min(1f, Math.max(0f, b));
+            return this;
+        }
+
+        /** Extra format code after each color, e.g. ChatColor.BOLD.toString() */
+        public Builder format(String legacyOrChatCode) {
+            this.format = legacyOrChatCode == null ? "" : legacyOrChatCode;
+            return this;
+        }
+
+        public RainbowText build() {
+            var cycle = (customCycle != null)
+                    ? List.copyOf(customCycle)
+                    : generateRainbow(steps, saturation, brightness);
+            return new RainbowText(text, cycle, format, 0);
+        }
+
+        /** HSB → hexcycle generator. */
+        private static List<String> generateRainbow(int steps, float sat, float bri) {
+            return IntStream.range(0, steps)
+                    .mapToObj(i -> {
+                        float hue = i / (float) steps;
+                        Color c = Color.getHSBColor(hue, sat, bri);
+                        return String.format("#%02x%02x%02x",
+                                c.getRed(), c.getGreen(), c.getBlue());
+                    })
+                    .collect(Collectors.toUnmodifiableList());
+        }
     }
 }
